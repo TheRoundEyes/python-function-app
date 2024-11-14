@@ -1,0 +1,72 @@
+name: Deploy Azure Function App
+
+on:
+    push:
+        branches:
+        - dev
+        - uat
+        - main
+
+env:
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'python-function-app'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+
+      - name: Set up Python 3.8
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+                    echo "AZURE_FUNCTIONAPP_NAME=prod-hello-function" >> $GITHUB_ENV
+                    echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+                  elif [ "${{ github.ref }}" = "refs/heads/uat" ]; then
+                    echo "AZURE_FUNCTIONAPP_NAME=uat-hello-function" >> $GITHUB_ENV
+                    echo "ENVIRONMENT=uat" >> $GITHUB_ENV
+                  else
+                    echo "AZURE_FUNCTIONAPP_NAME=dev-hello-function" >> $GITHUB_ENV
+                    echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+                  fi
+
+              # Login to Azure Container Registry
+              - name: Docker login to Azure Container Registry
+                uses: azure/docker-login@v1
+                with:
+                  login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+                  username: ${{ secrets.REGISTRY_USERNAME }}
+                  password: ${{ secrets.REGISTRY_PASSWORD }}
+
+              # Build and push Docker image
+              - name: Build and push Docker image
+                run: |
+                  docker build -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.AZURE_FUNCTIONAPP_NAME }}:${{ github.sha }} .
+                  docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.AZURE_FUNCTIONAPP_NAME }}:${{ github.sha }}
+                working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+
+              # Login to Azure
+              - name: Login to Azure
+                uses: azure/login@v1
+                with:
+                  creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+              # Deploy to Azure Function App
+              - name: Deploy to Azure Function App
+                uses: Azure/functions-container-action@v1
+                with:
+                  app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+                  image: ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.AZURE_FUNCTIONAPP_NAME }}:${{ github.sha }}
+
+              # Optional: Add deployment status check
+              - name: Check deployment status
+                run: |
+                  echo "Deployed to ${{ env.ENVIRONMENT }} environment"
+                  echo "Function App URL: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+
+          Version 2 of 2
+
+
+
